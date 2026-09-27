@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "../../../../lib/stripe";
 import { FUNNEL_TAG } from "../../../../lib/funnel";
-import { loopsEvent, loopsTransactional, loopsUpsert } from "../../../../lib/loops";
+import { loopsEvent, loopsUpsert, LOOPS_TX } from "../../../../lib/loops";
 
 export const runtime = "nodejs";
 
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2) Order email to Gautam (Loops transactional template; attachments ride along)
-  const txId = process.env.LOOPS_TX_ORDER_ID || "";
+  const txId = LOOPS_TX.orderInternal;
   const mail = await loopsTransactionalWithAttachments(txId, ORDER_INBOX, { summary, supplier_name, supplier_website, brands, buyer_email: email, order_id: sessionId }, attachments);
 
   // 3) Loops: buyer moves to "form submitted" (stops form reminders)
@@ -113,4 +113,3 @@ async function loopsTransactionalWithAttachments(transactionalId: string, email:
     return { ok: false };
   }
 }
-void loopsTransactional;

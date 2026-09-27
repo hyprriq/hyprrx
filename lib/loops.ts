@@ -1,4 +1,11 @@
 // Loops (email) — events + contact upserts. Fails soft: the funnel must never break on email.
+// Transactional template ids (Loops team "Hyprr Retail LLC", group "Report funnel"). Drafts until Gautam publishes them.
+export const LOOPS_TX = {
+  paymentReceived: process.env.LOOPS_TX_PAYMENT_RECEIVED || "cmuk3t0ct2gfr0j3lhavcid5g",
+  reportReady: process.env.LOOPS_TX_REPORT_READY || "cmuk3t1dd2gow0j48vuzfw10x",
+  checklist: process.env.LOOPS_TX_CHECKLIST || "cmuk3t27b008s0j62swhhbkun",
+  orderInternal: process.env.LOOPS_TX_ORDER_ID || "cmuk3t39l1bf80j3qjtsxw50e",
+};
 const BASE = "https://app.loops.so/api/v1";
 
 function headers() {

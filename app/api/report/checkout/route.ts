@@ -6,7 +6,7 @@ import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  let body: { email?: unknown; recover?: unknown; utm?: unknown; tz?: unknown } = {};
+  let body: { email?: unknown; recover?: unknown; utm?: unknown; tz?: unknown; code?: unknown } = {};
   try {
     body = await req.json();
   } catch {}
@@ -21,7 +21,18 @@ export async function POST(req: NextRequest) {
     const metadata: Record<string, string> = { funnel: FUNNEL_TAG, email, variant: recover ? "recovery59" : "full79", ...utm };
 
     let discounts: { promotion_code: string }[] | undefined;
-    if (recover) {
+    const givenCode = typeof body.code === "string" && /^R59-[A-Z0-9]{4,10}$/i.test(body.code) ? body.code.toUpperCase() : "";
+    if (givenCode) {
+      // code from a recovery email: reuse it if it is still active
+      const found = await s.promotionCodes.list({ code: givenCode, active: true, limit: 1 });
+      const pc = found.data[0];
+      if (pc && (!pc.expires_at || pc.expires_at > Math.floor(Date.now() / 1000))) {
+        discounts = [{ promotion_code: pc.id }];
+        metadata.promo_code = givenCode;
+        metadata.variant = "recovery59";
+      }
+    }
+    if (recover && !discounts) {
       const code = `R59-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const promo = await s.promotionCodes.create({
         promotion: { type: "coupon", coupon: RECOVERY_COUPON_ID },
