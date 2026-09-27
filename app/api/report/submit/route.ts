@@ -38,8 +38,7 @@ export async function POST(req: NextRequest) {
   const supplier_name = str(fd, "supplier_name", 120);
   const supplier_website = str(fd, "supplier_website", 200);
   const brands = str(fd, "brands", 300);
-  const marketplace = str(fd, "marketplace", 40);
-  const told = str(fd, "told");
+  const category = str(fd, "category", 120);
   const notes = str(fd, "notes");
   if (!supplier_name || !supplier_website || !brands) return NextResponse.json({ error: "Supplier name, website and brands are required." }, { status: 400 });
 
@@ -61,9 +60,8 @@ export async function POST(req: NextRequest) {
     `Supplier: ${supplier_name}`,
     `Website: ${supplier_website}`,
     `Brands: ${brands}`,
-    `Marketplace: ${marketplace}`,
-    `What they've been told: ${told || "—"}`,
-    `Notes: ${notes || "—"}`,
+    `Product category: ${category || "—"}`,
+    `Anything we should know: ${notes || "—"}`,
     `Files: ${attachments.length ? attachments.map((a) => a.filename).join(", ") : "none"}`,
     `UTM: ${["utm_source", "utm_medium", "utm_campaign", "utm_content"].map((k) => cs.metadata?.[k]).filter(Boolean).join(" / ") || "—"}`,
   ].join("\n");
@@ -77,8 +75,7 @@ export async function POST(req: NextRequest) {
           supplier_name: supplier_name.slice(0, 500),
           supplier_website: supplier_website.slice(0, 500),
           brands: brands.slice(0, 500),
-          marketplace,
-          told: told.slice(0, 500),
+          category,
           notes: notes.slice(0, 500),
           files: attachments.map((a) => a.filename).join(", ").slice(0, 500),
           form_submitted_at: new Date().toISOString(),

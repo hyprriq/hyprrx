@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         { key: "supplier_website", label: { type: "custom", custom: "Supplier website (optional)" }, type: "text", optional: true },
       ],
       metadata,
-      payment_intent_data: { metadata, description: "Hyprr X — one-time supplier intelligence report" },
+      payment_intent_data: { metadata, description: "HyprrIQ Supplier Report — one supplier, up to 5 brands" },
       consent_collection: { promotions: "auto" },
     });
 

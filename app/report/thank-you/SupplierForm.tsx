@@ -10,12 +10,13 @@ export default function SupplierForm({ sessionId, prefill, already }: { sessionI
   const [done, setDone] = useState(already);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const f = thankYou.fields;
 
   if (done)
     return (
-      <div className="order" style={{ marginTop: 26 }}>
-        <h3 className="h3">Got it.</h3>
-        <p style={{ marginTop: 10 }}>{thankYou.done}</p>
+      <div style={{ padding: "20px 18px", border: "3px solid #0B1B33", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
+        <strong className="disp" style={{ fontSize: "21px", color: "#0B1B33" }}>{thankYou.done}</strong>
+        <p style={{ margin: 0, fontSize: "15.5px", lineHeight: 1.5 }}>Reply to any email from us if something changes. We never contact your supplier.</p>
       </div>
     );
 
@@ -26,10 +27,9 @@ export default function SupplierForm({ sessionId, prefill, already }: { sessionI
         e.preventDefault();
         setErr("");
         const fd = new FormData(e.currentTarget);
-        const files = fd.getAll("files") as File[];
-        const real = files.filter((f) => f && f.size > 0);
+        const real = (fd.getAll("files") as File[]).filter((x) => x && x.size > 0);
         if (real.length > MAX_FILES) return setErr(`Up to ${MAX_FILES} files.`);
-        if (real.some((f) => f.size > MAX_MB * 1024 * 1024)) return setErr(`Each file must be under ${MAX_MB} MB.`);
+        if (real.some((x) => x.size > MAX_MB * 1024 * 1024)) return setErr(`Each file must be under ${MAX_MB} MB.`);
         fd.set("session_id", sessionId);
         setBusy(true);
         try {
@@ -45,43 +45,38 @@ export default function SupplierForm({ sessionId, prefill, already }: { sessionI
         }
       }}
     >
+      <div style={{ padding: "12px 14px", background: "#FFF8D6", border: "1px solid #F1DE7A", borderRadius: "8px", fontSize: "14.5px", lineHeight: 1.45, color: "#0B1B33" }}>
+        <strong>{thankYou.oneSupplier}</strong>
+      </div>
       <label>
-        Supplier name *
-        <input name="supplier_name" required maxLength={120} defaultValue={prefill.supplier_name} placeholder="Company name as they gave it" />
+        {f.name} *
+        <input name="supplier_name" required maxLength={120} defaultValue={prefill.supplier_name} />
       </label>
       <label>
-        Supplier website *
+        {f.website} *
         <input name="supplier_website" required maxLength={200} defaultValue={prefill.supplier_website} placeholder="https://" inputMode="url" />
       </label>
       <label>
-        Brands they&rsquo;re offering (up to 5) *
-        <input name="brands" required maxLength={300} placeholder="e.g. Nintendo, Sony, PlayStation" />
+        {f.brands} * <span className="hint">({f.brandsHint})</span>
+        <input name="brands" required maxLength={300} />
       </label>
       <label>
-        Marketplace you sell on
-        <select name="marketplace" defaultValue="Amazon US">
-          {["Amazon US", "Amazon CA", "Amazon UK", "Amazon EU", "Walmart", "Other"].map((m) => (
-            <option key={m}>{m}</option>
-          ))}
-        </select>
+        {f.category}
+        <input name="category" maxLength={120} />
       </label>
       <label>
-        What they&rsquo;ve told you <span className="hint">LOA? &ldquo;authorized&rdquo;? MOQ, prices, payment terms</span>
-        <textarea name="told" rows={4} maxLength={2000} />
+        {f.notes}
+        <textarea name="notes" rows={4} maxLength={2000} />
       </label>
       <label>
-        Upload invoice / LOA <span className="hint">optional · up to 2 files · PDF, JPG or PNG · 4 MB each</span>
+        {f.upload} <span className="hint">({f.uploadHint} · PDF, JPG or PNG · {MAX_MB} MB each)</span>
         <input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
       </label>
-      <label>
-        Anything else
-        <textarea name="notes" rows={3} maxLength={2000} />
-      </label>
-      {err && <p className="err" style={{ color: "#C1272D" }}>{err}</p>}
-      <button type="submit" className="btn" disabled={busy}>
-        {busy ? "Sending…" : "Submit supplier details →"}
+      {err && <p style={{ margin: 0, fontSize: "13px", color: "#C1272D" }}>{err}</p>}
+      <button type="submit" className="cta" disabled={busy}>
+        <b>{busy ? "Sending…" : thankYou.button}</b>
       </button>
-      <p className="small" style={{ textAlign: "center" }}>Used for your report only. We never contact the supplier.</p>
+      <p style={{ margin: 0, fontSize: "13.5px", color: "#67748A", textAlign: "center" }}>{thankYou.line}</p>
     </form>
   );
 }

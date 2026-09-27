@@ -24,14 +24,14 @@ const plex = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://report.hyprrx.com"),
-  title: { absolute: "Check your wholesale supplier before you pay — $79 report in 24h | Hyprr X" },
+  title: { absolute: "Real supplier. Real invoice. Account still suspended. — HyprrIQ Supplier Report, $79" },
   description:
-    "A full researched report on your Amazon wholesale supplier and its brands in 24 hours: supplier identity, authorized-distributor claims, brand reseller posture, invoice review. One-time $79. No account, no subscription.",
+    "A real business isn't the same as an authorised source. Send us one supplier; within 10 hours you get a researched report on whether it can back up what it's selling you. $79, one-time. No account, no subscription.",
   openGraph: {
-    title: "Before you wire that PO, know who you're wiring it to.",
-    description: "Full supplier intelligence report in 24 hours — $79, one-time.",
+    title: "Real supplier. Real invoice. Account still suspended.",
+    description: "HyprrIQ Supplier Report — one supplier, up to 5 brands, in your inbox within 10 hours. $79, one-time.",
     url: "https://report.hyprrx.com",
-    siteName: "Hyprr X",
+    siteName: "HyprrIQ",
     type: "website",
   },
   robots: { index: true, follow: true },
