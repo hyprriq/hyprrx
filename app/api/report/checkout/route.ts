@@ -60,7 +60,6 @@ export async function POST(req: NextRequest) {
       ],
       metadata,
       payment_intent_data: { metadata, description: "HyprrIQ Supplier Report — one supplier, up to 5 brands" },
-      consent_collection: { promotions: "auto" },
     });
 
     // Loops: mark checkout started (recovery loop starts from the expired event; this is for context)
