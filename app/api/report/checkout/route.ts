@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
       ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       success_url: `${base}/thank-you?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/?returned=1`,
-      after_expiration: { recovery: { enabled: true, allow_promotion_codes: true } },
+      // Stripe rejects allow_promotion_codes here when the session already carries a discount
+      after_expiration: { recovery: discounts ? { enabled: true } : { enabled: true, allow_promotion_codes: true } },
       custom_fields: [
         { key: "supplier_name", label: { type: "custom", custom: "Supplier name (optional)" }, type: "text", optional: true },
         { key: "supplier_website", label: { type: "custom", custom: "Supplier website (optional)" }, type: "text", optional: true },

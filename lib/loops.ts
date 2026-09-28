@@ -32,7 +32,9 @@ export async function loopsUpsert(email: string, props: Record<string, string | 
     const res = await fetch(`${BASE}/contacts/update`, {
       method: "PUT",
       headers: headers(),
-      body: JSON.stringify({ email, source: "report.hyprrx.com", ...props }),
+      // subscribed: true — every upsert follows an email the visitor typed under the consent line
+      // ("…occasional supplier-safety tips. Unsubscribe anytime."), and Loops workflows only send to subscribed contacts.
+      body: JSON.stringify({ email, source: "report.hyprrx.com", subscribed: true, ...props }),
     });
     return { ok: res.ok };
   } catch {
