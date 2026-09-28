@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./report.css";
 import { FunnelProvider } from "./ui";
+import MetaPixel from "./MetaPixel";
 
 const schibsted = localFont({
   src: "./fonts/SchibstedGrotesk-Variable.woff2",
@@ -46,6 +47,7 @@ export const viewport: Viewport = {
 export default function ReportLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className={`rp ${schibsted.variable} ${publicSans.variable} ${plex.variable}`}>
+      <MetaPixel />
       <FunnelProvider>{children}</FunnelProvider>
     </div>
   );

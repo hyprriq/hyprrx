@@ -4,6 +4,7 @@ import { stripe } from "../../../lib/stripe";
 import { FUNNEL_TAG } from "../../../lib/funnel";
 import { thankYou } from "../content";
 import SupplierForm from "./SupplierForm";
+import { PurchasePixel } from "../MetaPixel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { absolute: "Payment received — tell us about your supplier | HyprrIQ" }, robots: { index: false } };
@@ -13,6 +14,8 @@ export default async function ThankYouPage({ searchParams }: { searchParams: Pro
   let paid = false;
   let email = "";
   let already = false;
+  let amount = 0;
+  let currency = "USD";
   const prefill = { supplier_name: "", supplier_website: "" };
   if (session_id && /^cs_(live|test)_[A-Za-z0-9]+$/.test(session_id)) {
     try {
@@ -20,6 +23,8 @@ export default async function ThankYouPage({ searchParams }: { searchParams: Pro
       paid = cs.payment_status === "paid" && cs.metadata?.funnel === FUNNEL_TAG;
       email = cs.customer_details?.email || cs.customer_email || "";
       already = cs.metadata?.form_submitted === "1";
+      amount = (cs.amount_total || 0) / 100;
+      currency = (cs.currency || "usd").toUpperCase();
       for (const f of cs.custom_fields || []) {
         if (f.key === "supplier_name" && f.text?.value) prefill.supplier_name = f.text.value;
         if (f.key === "supplier_website" && f.text?.value) prefill.supplier_website = f.text.value;
@@ -37,6 +42,7 @@ export default async function ThankYouPage({ searchParams }: { searchParams: Pro
       <div style={{ padding: "40px 20px 60px", background: "#ffffff", display: "flex", flexDirection: "column", gap: "18px", minHeight: "80vh" }}>
         {paid ? (
           <>
+            <PurchasePixel eventId={session_id!} value={amount} currency={currency} />
             <span className="tag" style={{ alignSelf: "flex-start", background: "#DDF1E5", color: "#0F5E36" }}>Payment received</span>
             <h1 className="disp" style={{ margin: 0, fontSize: "31px", lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>{thankYou.title}</h1>
             <p style={{ margin: 0, fontSize: "14px", color: "#67748A" }}>Receipt sent to <strong>{email}</strong>.</p>

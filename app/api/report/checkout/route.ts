@@ -6,7 +6,7 @@ import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  let body: { email?: unknown; recover?: unknown; utm?: unknown; tz?: unknown; code?: unknown } = {};
+  let body: { email?: unknown; recover?: unknown; utm?: unknown; tz?: unknown; code?: unknown; fbp?: unknown; fbc?: unknown } = {};
   try {
     body = await req.json();
   } catch {}
@@ -16,9 +16,16 @@ export async function POST(req: NextRequest) {
   const utm = pickUtm(body.utm);
   const base = funnelBase(req);
 
+  // Browser context for the server-side Meta Purchase event (sent from the Stripe webhook, deduplicated by session id)
+  const meta_ua = (req.headers.get("user-agent") || "").slice(0, 500);
+  const meta_ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim().slice(0, 64);
+  const meta_fbp = typeof body.fbp === "string" && /^fb\.\d\.\d+\.\d+$/.test(body.fbp) ? body.fbp : "";
+  const meta_fbc = typeof body.fbc === "string" && /^fb\.\d\.\d+\.[\w-]+$/.test(body.fbc) ? body.fbc.slice(0, 500) : "";
+
   try {
     const s = stripe();
-    const metadata: Record<string, string> = { funnel: FUNNEL_TAG, email, variant: recover ? "recovery59" : "full79", ...utm };
+    const metadata: Record<string, string> = { funnel: FUNNEL_TAG, email, variant: recover ? "recovery59" : "full79", ...utm, source_url: `${base}/` };
+    for (const [k, v] of Object.entries({ meta_ua, meta_ip, meta_fbp, meta_fbc })) if (v) metadata[k] = v;
 
     let discounts: { promotion_code: string }[] | undefined;
     const givenCode = typeof body.code === "string" && /^R59-[A-Z0-9]{4,10}$/i.test(body.code) ? body.code.toUpperCase() : "";

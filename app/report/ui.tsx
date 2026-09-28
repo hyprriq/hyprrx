@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
-import { cta, emailStep, exitPopup, recoveryPopup } from "./content";
+import { cta, emailStep, exitPopup, recoveryPopup, PRICE, RECOVERY_PRICE } from "./content";
+import { metaTrack } from "./MetaPixel";
 
 type Ctx = { openEmail: () => void; zoom: (src: string, alt: string) => void };
 const FunnelCtx = createContext<Ctx>({ openEmail: () => {}, zoom: () => {} });
@@ -31,6 +32,14 @@ function captureUtm() {
   } catch {}
 }
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+function readCookie(name: string): string {
+  try {
+    const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return m ? decodeURIComponent(m[1]).slice(0, 200) : "";
+  } catch {
+    return "";
+  }
+}
 
 const Arrow = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -167,13 +176,16 @@ async function startCheckout(email: string, recover: boolean, setErr: (s: string
   try {
     localStorage.setItem(LS_EMAIL, email);
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const value = recover ? RECOVERY_PRICE : PRICE;
+    metaTrack("Lead", { content_name: "supplier_report", value, currency: "USD" });
     const res = await fetch("/api/report/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, recover, utm: readUtm(), tz, code: recover ? sessionStorage.getItem(SS_CODE) || "" : "" }),
+      body: JSON.stringify({ email, recover, utm: readUtm(), tz, code: recover ? sessionStorage.getItem(SS_CODE) || "" : "", fbp: readCookie("_fbp"), fbc: readCookie("_fbc") }),
     });
     const data = await res.json();
     if (!res.ok || !data.url) throw new Error(data.error || "Could not start checkout");
+    metaTrack("InitiateCheckout", { content_name: "supplier_report", value, currency: "USD", num_items: 1 });
     window.location.href = data.url;
   } catch (e) {
     setErr(e instanceof Error ? e.message : "Something went wrong. Try again.");

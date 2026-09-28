@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { stripe, RECOVERY_COUPON_ID } from "../../../../lib/stripe";
 import { FUNNEL_TAG } from "../../../../lib/funnel";
 import { loopsEvent, loopsTransactional, loopsUpsert, LOOPS_TX } from "../../../../lib/loops";
+import { metaPurchase } from "../../../../lib/meta";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,20 @@ export async function POST(req: NextRequest) {
       await loopsUpsert(email, { funnelStage: "paid", paidAt: new Date().toISOString() });
       await loopsEvent(email, "paid", { amount: (cs.amount_total || 0) / 100, variant: cs.metadata?.variant || "", orderId: cs.id, formUrl });
       await loopsTransactional(LOOPS_TX.paymentReceived, email, { formUrl, orderId: cs.id });
+      // Meta Conversions API — same event_id as the browser Purchase on /thank-you, so Meta counts it once
+      const m = cs.metadata || {};
+      await metaPurchase({
+        eventId: cs.id,
+        email,
+        value: (cs.amount_total || 0) / 100,
+        currency: cs.currency || "usd",
+        sourceUrl: m.source_url ? `${m.source_url.replace(/\/$/, "")}/thank-you` : "https://report.hyprrx.com/thank-you",
+        userAgent: m.meta_ua,
+        ip: m.meta_ip,
+        fbp: m.meta_fbp,
+        fbc: m.meta_fbc,
+        orderId: cs.id,
+      });
     } else if (event.type === "checkout.session.expired") {
       // unique $59 code for the +24h email (valid ~72h so it covers the send + 48h)
       let promoCode = "";

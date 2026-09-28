@@ -22,8 +22,8 @@ export default function ReportPage() {
 {/* evidence stack */}
 <div className="stack">
 <div className="vid">
-<button aria-label="Play the 60-second explainer" style={{ width: '64px', height: '64px', borderRadius: '50%', border: '0', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><svg width="24" height="24" viewBox="0 0 24 24" fill="#0B1B33"><path d="M8 5v14l11-7z" /></svg></button>
-<span className="mono" style={{ fontSize: '10px', color: '#D8F1FF' }}>60-second explainer</span>
+<button aria-label="Watch the explainer" style={{ width: '64px', height: '64px', borderRadius: '50%', border: '0', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><svg width="24" height="24" viewBox="0 0 24 24" fill="#0B1B33"><path d="M8 5v14l11-7z" /></svg></button>
+<span className="mono" style={{ fontSize: '10px', color: '#D8F1FF' }}>Watch the explainer</span>
 </div>
 <div className="card">
 <img src="/report/r1-verdict-cover.webp" alt="Report verdict: Verify Before Purchase" width={1200} height={448} style={{ display: 'block', width: '100%', height: 'auto' }} />
