@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe, RECOVERY_COUPON_ID } from "../../../../lib/stripe";
-import { FUNNEL_TAG } from "../../../../lib/funnel";
+import { FUNNEL_TAG, publicBase } from "../../../../lib/funnel";
 import { loopsEvent, loopsFunnelStage, loopsUpsert } from "../../../../lib/loops";
 import { metaPurchase } from "../../../../lib/meta";
 
@@ -31,11 +31,14 @@ export async function POST(req: NextRequest) {
     const email = (cs.customer_details?.email || cs.customer_email || cs.metadata?.email || "").toLowerCase();
     if (!email) return NextResponse.json({ ignored: "no email" });
 
-    const base = (cs.metadata?.source_url || "https://report.hyprrx.com/").replace(/\/$/, "");
+    const base = publicBase(cs.metadata?.source_url);
     if (event.type === "checkout.session.completed" && cs.payment_status === "paid") {
-      const formUrl = `${base}/thank-you?session_id=${cs.id}`;
-      await loopsUpsert(email, { funnelStage: "paid", paidAt: new Date().toISOString() });
-      await loopsEvent(email, "paid", { amount: (cs.amount_total || 0) / 100, variant: cs.metadata?.variant || "", orderId: cs.id, formUrl });
+      // Emails carry the short order link, never the Stripe id
+      const orderNo = cs.metadata?.order_no || "";
+      const formUrl = orderNo ? `${base}/o/${orderNo}` : `${base}/thank-you?session_id=${cs.id}`;
+      await loopsUpsert(email, { funnelStage: "paid", paidAt: new Date().toISOString(), orderNo });
+      // Loops event property "orderId" carries the short order number (the workflow templates were built on that name).
+      await loopsEvent(email, "paid", { amount: (cs.amount_total || 0) / 100, variant: cs.metadata?.variant || "", orderId: orderNo, orderNo, formUrl });
       // Meta Conversions API — same event_id as the browser Purchase on /thank-you, so Meta counts it once
       const m = cs.metadata || {};
       await metaPurchase({
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest) {
     } else if (event.type === "checkout.session.expired") {
       // A buyer who already paid through another session gets no recovery sequence.
       const stage = await loopsFunnelStage(email);
-      if (stage === "paid" || stage === "form_submitted") return NextResponse.json({ ignored: "already paid" });
+      if (stage === "paid" || stage === "form_submitted" || stage === "delivered") return NextResponse.json({ ignored: "already paid" });
       // unique $59 code for the +24h email (valid ~72h so it covers the send + 48h)
       let promoCode = "";
       try {

@@ -2,6 +2,7 @@
 import { Cta, StickyBar, Zoomable } from "./ui";
 import HeroVideo from "./HeroVideo";
 import Footer from "./Footer";
+import { AgreeLine, GuaranteeLine } from "./Legal";
 
 export const revalidate = 3600;
 
@@ -268,6 +269,7 @@ export default function ReportPage() {
 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', fontSize: '15px' }}><span style={{ color: '#67748A' }}>Delivered</span><strong>Within 10 hours</strong></div>
 </div>
 <Cta style={{ width: '100%' }} />
+<AgreeLine />
 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: '#67748A' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67748A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>Secure checkout</span>
 </div>
 {/* guarantee */}
@@ -275,6 +277,7 @@ export default function ReportPage() {
 <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: '#4FD6E3', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#0B1B33', transform: 'rotate(-8deg)' }}><span className="disp" style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1' }}>10h</span><span className="mono" style={{ fontSize: '8.5px', fontWeight: '600' }}>or refund</span></div>
 <p style={{ margin: '0', fontSize: '15px', lineHeight: '1.45', color: '#D8F1FF' }}><strong style={{ color: '#ffffff' }}>Not in your inbox within 10 hours? Full refund.</strong> If we can't take on your case, you're refunded in full.</p>
 </div>
+<GuaranteeLine />
 </div>
 
 {/* 11 FAQ */}

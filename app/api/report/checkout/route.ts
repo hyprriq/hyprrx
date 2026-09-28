@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, REPORT_PRICE_ID, RECOVERY_COUPON_ID } from "../../../../lib/stripe";
-import { funnelBase, FUNNEL_TAG, isEmail, nextMidnightEpoch, pickUtm } from "../../../../lib/funnel";
+import { funnelBase, FUNNEL_TAG, isEmail, LIVE_BASE, newOrderNo, nextMidnightEpoch, pickUtm } from "../../../../lib/funnel";
 import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
 
 export const runtime = "nodejs";
@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const s = stripe();
-    const metadata: Record<string, string> = { funnel: FUNNEL_TAG, email, variant: recover ? "recovery59" : "full79", ...utm, source_url: `${base}/` };
+    // order_no is the buyer-facing order number (emails, /o/<no> links); it lives on the Session and the PaymentIntent.
+    const metadata: Record<string, string> = { funnel: FUNNEL_TAG, order_no: newOrderNo(), email, variant: recover ? "recovery59" : "full79", ...utm, source_url: `${base}/` };
     for (const [k, v] of Object.entries({ meta_ua, meta_ip, meta_fbp, meta_fbc })) if (v) metadata[k] = v;
 
     let discounts: { promotion_code: string }[] | undefined;
@@ -68,6 +69,13 @@ export async function POST(req: NextRequest) {
       ],
       metadata,
       payment_intent_data: { metadata, description: "HyprrIQ Supplier Report — one supplier, up to 5 brands" },
+      // Legal links on the Stripe page. The "I agree to the terms" checkbox needs the Terms URL saved in the Stripe
+      // dashboard first (Settings → Business → Public details), so it is switched on with STRIPE_TOS_CONSENT=1.
+      custom_text: {
+        submit: { message: `Delivered within 10 hours of your supplier form, or a full refund. Refund policy: ${LIVE_BASE}/refunds` },
+        ...(process.env.STRIPE_TOS_CONSENT === "1" ? { terms_of_service_acceptance: { message: `I agree to the [Terms of Service](${LIVE_BASE}/terms) and [Refund Policy](${LIVE_BASE}/refunds).` } } : {}),
+      },
+      ...(process.env.STRIPE_TOS_CONSENT === "1" ? { consent_collection: { terms_of_service: "required" as const } } : {}),
     });
 
     // Loops: mark checkout started (recovery loop starts from the expired event; this is for context)

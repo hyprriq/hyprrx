@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "../../../../lib/stripe";
 import { FUNNEL_TAG, funnelBase } from "../../../../lib/funnel";
-import { loopsEvent, loopsUpsert, loopsTransactional, LOOPS_TX } from "../../../../lib/loops";
+import { loopsEvent, loopsUpsert, loopsTransactional, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
+import { DELIVERY_HOURS, ensureOrderNo, fmtBoth, fmtIST } from "../../../../lib/orders";
 
 export const runtime = "nodejs";
 
@@ -59,45 +60,68 @@ export async function POST(req: NextRequest) {
   const newFileNames = attachments.map((a) => a.filename);
   const fileNames = [...previousFiles.split(", ").filter(Boolean), ...newFileNames].join(", ").slice(0, 500);
 
-  const amount = ((cs.amount_total || 0) / 100).toFixed(2);
+  const amount = `$${((cs.amount_total || 0) / 100).toFixed(2)} ${(cs.currency || "usd").toUpperCase()}`;
   const base = funnelBase(req);
-  const formUrl = `${base}/thank-you?session_id=${sessionId}`;
-  const summary = [
-    `${isUpdate ? "UPDATED ORDER" : "ORDER"} ${sessionId}`,
-    `Paid: $${amount} ${cs.currency?.toUpperCase()} · variant ${cs.metadata?.variant || "?"}${cs.metadata?.promo_code ? " · code " + cs.metadata.promo_code : ""}`,
-    `Buyer: ${email}`,
-    `Supplier: ${supplier_name}`,
-    `Website: ${supplier_website}`,
-    `Brands: ${brands}`,
-    `Product category: ${category || "—"}`,
-    `Anything we should know: ${notes || "—"}`,
-    `Files: ${fileNames || "none"}${isUpdate && newFileNames.length ? ` (new in this email: ${newFileNames.join(", ")})` : ""}`,
-    `UTM: ${["utm_source", "utm_medium", "utm_campaign", "utm_content"].map((k) => cs.metadata?.[k]).filter(Boolean).join(" / ") || "—"}`,
-    `Form: ${formUrl}`,
-  ].join("\n");
+  const orderNo = await ensureOrderNo(cs, pi);
+  const formUrl = `${base}/o/${orderNo}`; // short link → this order's thank-you / review page
+  const now = new Date().toISOString();
+  // The 10-hour clock starts at the FIRST submission and never moves on edits.
+  const submittedAt = (isUpdate && pi?.metadata?.form_submitted_at) || now;
+  const dueAt = new Date(new Date(submittedAt).getTime() + DELIVERY_HOURS * 3600 * 1000).toISOString();
+  // What changed (UPDATED ORDER only): previous value when it differs, "" otherwise — the email shows "was: …" beside changed fields.
+  const prev = (k: string) => (isUpdate ? pi?.metadata?.[k] || "" : "");
+  const was = (k: string, next: string) => (isUpdate && prev(k) !== next ? prev(k) || "(empty)" : "");
 
   // 1) Stripe is the system of record: PaymentIntent metadata (500 chars per value)
   try {
     if (pi) {
       await s.paymentIntents.update(pi.id, {
         metadata: {
+          order_no: orderNo,
           supplier_name: supplier_name.slice(0, 500),
           supplier_website: supplier_website.slice(0, 500),
           brands: brands.slice(0, 500),
           category,
           notes: notes.slice(0, 500),
           files: fileNames,
-          [isUpdate ? "form_updated_at" : "form_submitted_at"]: new Date().toISOString(),
+          [isUpdate ? "form_updated_at" : "form_submitted_at"]: now,
         },
       });
     }
-    await s.checkout.sessions.update(sessionId, { metadata: { ...cs.metadata, form_submitted: "1" } }).catch(() => {});
+    await s.checkout.sessions.update(sessionId, { metadata: { ...cs.metadata, order_no: orderNo, form_submitted: "1" } }).catch(() => {});
   } catch (e) {
     console.error("[report/submit] stripe metadata", e instanceof Error ? e.message : e);
   }
 
-  const vars = { summary, supplier_name, supplier_website, brands, buyer_email: email, order_id: sessionId };
-  // 2) Internal email to Gautam (plain; attachments ride along). New order vs updated order.
+  // 2) Internal order card to the order inbox (uploads ride along as attachments). New order vs updated order.
+  const website = /^https?:\/\//i.test(supplier_website) ? supplier_website : `https://${supplier_website}`;
+  const vars = {
+    orderNo,
+    supplierName: supplier_name,
+    supplierWebsite: supplier_website,
+    websiteUrl: website,
+    brands,
+    category: category || "—",
+    notes: notes.replace(/\s*\n+\s*/g, " · ") || "—",
+    files: fileNames || "none",
+    filesNote: newFileNames.length ? `${newFileNames.length === 1 ? "Attached to this email" : `${newFileNames.length} attached to this email`}${isUpdate && previousFiles ? "; earlier files are on the first order email" : ""}.` : isUpdate && previousFiles ? "On the first order email." : fileNames ? "" : "The buyer sent no files.",
+    buyerEmail: email,
+    amount: `${amount} · ${cs.metadata?.variant || "?"}${cs.metadata?.promo_code ? " · code " + cs.metadata.promo_code : ""}`,
+    utm: ["utm_source", "utm_medium", "utm_campaign", "utm_content"].map((k) => cs.metadata?.[k]).filter(Boolean).join(" / ") || "direct",
+    dueIST: fmtIST(dueAt), // subject line
+    dueBy: fmtBoth(dueAt), // "Tue 29 Sep, 1:11 am IST (3:41 pm Mon ET)"
+    submittedAt: fmtBoth(submittedAt),
+    formUrl,
+    deliverUrl: `${base}/deliver/${orderNo}`,
+    stripeUrl: `https://dashboard.stripe.com/${cs.livemode ? "" : "test/"}payments/${pi?.id || ""}`,
+    // UPDATED ORDER only — empty strings hide the "was:" rows in the template
+    supplierWas: was("supplier_name", supplier_name),
+    websiteWas: was("supplier_website", supplier_website),
+    brandsWas: was("brands", brands),
+    categoryWas: was("category", category),
+    notesWas: was("notes", notes).replace(/\s*\n+\s*/g, " · "),
+    updatedAt: fmtBoth(now),
+  };
   const mail = await loopsTransactionalWithAttachments(isUpdate ? LOOPS_TX.orderUpdatedInternal : LOOPS_TX.orderInternal, ORDER_INBOX, vars, attachments);
 
   // 3) Buyer: "Order confirmed" once, on the first submission (edits get no extra buyer email)
@@ -108,27 +132,12 @@ export async function POST(req: NextRequest) {
       brands,
       files: fileNames || "none",
       formUrl,
-      orderId: sessionId,
+      orderNo,
     });
-    await loopsUpsert(email, { funnelStage: "form_submitted", supplierName: supplier_name });
-    await loopsEvent(email, "form_submitted", { supplier: supplier_name, orderId: sessionId });
+    await loopsUpsert(email, { funnelStage: "form_submitted", supplierName: supplier_name, orderNo });
+    await loopsEvent(email, "form_submitted", { supplier: supplier_name, orderNo });
   }
 
   if (!mail.ok) console.error("[report/submit] internal email not sent — Stripe metadata holds the order", sessionId);
-  return NextResponse.json({ ok: true, updated: isUpdate, saved: { supplier_name, supplier_website, brands, category, notes, files: fileNames } });
-}
-
-async function loopsTransactionalWithAttachments(transactionalId: string, email: string, dataVariables: Record<string, string>, attachments: { filename: string; contentType: string; data: string }[]) {
-  if (!process.env.LOOPS_API_KEY || !transactionalId) return { ok: false, skipped: true };
-  try {
-    const res = await fetch("https://app.loops.so/api/v1/transactional", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.LOOPS_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ transactionalId, email, dataVariables, ...(attachments.length ? { attachments } : {}) }),
-    });
-    if (!res.ok) console.error("[report/submit] loops", res.status, (await res.text()).slice(0, 200));
-    return { ok: res.ok };
-  } catch {
-    return { ok: false };
-  }
+  return NextResponse.json({ ok: true, updated: isUpdate, orderNo, saved: { supplier_name, supplier_website, brands, category, notes, files: fileNames } });
 }

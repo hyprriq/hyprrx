@@ -57,18 +57,29 @@ export async function loopsFunnelStage(email: string): Promise<string> {
   }
 }
 
-/** Transactional email via a Loops template id (created as a draft in Loops; id from env). */
+export type LoopsAttachment = { filename: string; contentType: string; data: string }; // data = base64
+
+/** Transactional email via a Loops template id (published in Loops; id from env). */
 export async function loopsTransactional(transactionalId: string, email: string, dataVariables: Record<string, string>) {
-  if (!process.env.LOOPS_API_KEY || !transactionalId) return { ok: false, skipped: true };
+  return loopsTransactionalWithAttachments(transactionalId, email, dataVariables, []);
+}
+
+/** Same, with file attachments (buyer uploads on the internal order email, the PDF on the report email). */
+export async function loopsTransactionalWithAttachments(transactionalId: string, email: string, dataVariables: Record<string, string>, attachments: LoopsAttachment[]): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  if (!process.env.LOOPS_API_KEY || !transactionalId) return { ok: false, skipped: true, error: "Email not configured" };
   try {
     const res = await fetch(`${BASE}/transactional`, {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ transactionalId, email, dataVariables }),
+      body: JSON.stringify({ transactionalId, email, dataVariables, ...(attachments.length ? { attachments } : {}) }),
     });
-    if (!res.ok) console.error("[loops/transactional]", transactionalId, res.status, (await res.text()).slice(0, 200));
-    return { ok: res.ok };
-  } catch {
-    return { ok: false };
+    if (!res.ok) {
+      const text = (await res.text()).slice(0, 300);
+      console.error("[loops/transactional]", transactionalId, res.status, text);
+      return { ok: false, error: `Loops ${res.status}: ${text}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Loops unreachable" };
   }
 }

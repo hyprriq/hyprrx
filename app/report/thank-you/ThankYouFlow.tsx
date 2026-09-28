@@ -36,7 +36,9 @@ function SentBox({ saved, title }: { saved: Saved; title: string }) {
   );
 }
 
-export default function ThankYouFlow({ sessionId, email, submitted, saved: initial }: { sessionId: string; email: string; submitted: boolean; saved: Saved }) {
+const OrderNo = ({ no }: { no: string }) => (no ? <p style={{ margin: "-8px 0 0", fontSize: "13px", color: "#67748A" }}>Order {no}</p> : null);
+
+export default function ThankYouFlow({ sessionId, orderNo, email, submitted, saved: initial }: { sessionId: string; orderNo: string; email: string; submitted: boolean; saved: Saved }) {
   const [mode, setMode] = useState<Mode>(submitted ? "review" : "new");
   const [saved, setSaved] = useState<Saved>(initial);
   const [wasUpdate, setWasUpdate] = useState(false);
@@ -47,6 +49,7 @@ export default function ThankYouFlow({ sessionId, email, submitted, saved: initi
         <Tag tone="green">{confirmed.tag}</Tag>
         <H1>{confirmed.title}</H1>
         <p style={{ margin: 0, fontSize: "16.5px", lineHeight: 1.5, color: "#1F2A3D" }}>{confirmed.line(email)}{wasUpdate ? ` ${review.updated}` : ""}</p>
+        <OrderNo no={orderNo} />
         <SentBox saved={saved} title={confirmed.sentTitle} />
         <p style={{ margin: "-6px 0 0", fontSize: "13.5px", color: "#67748A" }}>{confirmed.wrong}</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "6px" }}>
@@ -68,6 +71,7 @@ export default function ThankYouFlow({ sessionId, email, submitted, saved: initi
         <Tag tone="green">{confirmed.tag}</Tag>
         <H1>{review.title}</H1>
         <p style={{ margin: 0, fontSize: "16.5px", lineHeight: 1.5, color: "#1F2A3D" }}>{confirmed.line(email)}</p>
+        <OrderNo no={orderNo} />
         <SentBox saved={saved} title={confirmed.sentTitle} />
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <button type="button" className="cta" style={{ flex: "1 1 200px" }} onClick={() => setMode("confirmed")}><b>{review.ok}</b></button>
@@ -83,7 +87,7 @@ export default function ThankYouFlow({ sessionId, email, submitted, saved: initi
       <Tag tone={editing ? "blue" : "green"}>{editing ? "Edit your details" : "Payment received"}</Tag>
       <H1>{editing ? review.edit : thankYou.title}</H1>
       <p style={{ margin: 0, fontSize: "14px", color: "#67748A" }}>
-        {thankYou.sentTo} <strong>{email}</strong>.
+        {thankYou.sentTo} <strong>{email}</strong>.{orderNo ? ` Order ${orderNo}.` : ""}
       </p>
       <SupplierForm
         sessionId={sessionId}

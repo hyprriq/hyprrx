@@ -2,6 +2,7 @@
 import type Stripe from "stripe";
 import { stripe } from "../../../lib/stripe";
 import { FUNNEL_TAG } from "../../../lib/funnel";
+import { ensureOrderNo } from "../../../lib/orders";
 import Footer from "../Footer";
 import { PurchasePixel } from "../MetaPixel";
 import ThankYouFlow, { type Saved } from "./ThankYouFlow";
@@ -9,9 +10,10 @@ import ThankYouFlow, { type Saved } from "./ThankYouFlow";
 export const dynamic = "force-dynamic";
 export const metadata = { title: { absolute: "Your order — HyprrIQ Supplier Report" }, robots: { index: false } };
 
-export default async function ThankYouPage({ searchParams }: { searchParams: Promise<{ session_id?: string }> }) {
-  const { session_id } = await searchParams;
+export default async function ThankYouPage({ searchParams }: { searchParams: Promise<{ session_id?: string; missing?: string }> }) {
+  const { session_id, missing } = await searchParams;
   let paid = false;
+  let orderNo = "";
   let email = "";
   let submitted = false;
   let amount = 0;
@@ -23,6 +25,8 @@ export default async function ThankYouPage({ searchParams }: { searchParams: Pro
       paid = cs.payment_status === "paid" && cs.metadata?.funnel === FUNNEL_TAG;
       email = cs.customer_details?.email || cs.customer_email || "";
       submitted = cs.metadata?.form_submitted === "1";
+      const piForNo = cs.payment_intent && typeof cs.payment_intent !== "string" ? (cs.payment_intent as Stripe.PaymentIntent) : null;
+      orderNo = paid ? await ensureOrderNo(cs, piForNo) : cs.metadata?.order_no || "";
       amount = (cs.amount_total || 0) / 100;
       currency = (cs.currency || "usd").toUpperCase();
       // Checkout custom fields prefill the first form; after submission the PaymentIntent metadata is the order record.
@@ -56,17 +60,19 @@ export default async function ThankYouPage({ searchParams }: { searchParams: Pro
         {paid ? (
           <>
             <PurchasePixel eventId={session_id!} value={amount} currency={currency} />
-            <ThankYouFlow sessionId={session_id!} email={email} submitted={submitted} saved={saved} />
+            <ThankYouFlow sessionId={session_id!} orderNo={orderNo} email={email} submitted={submitted} saved={saved} />
           </>
         ) : (
           <>
-            <h1 className="disp" style={{ margin: 0, fontSize: "31px", lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>We couldn't find a payment for this link.</h1>
-            <p style={{ margin: 0, fontSize: "16.5px", lineHeight: 1.5 }}>If you just paid, wait a few seconds and refresh. If you came back without paying, your report is one step away.</p>
+            <h1 className="disp" style={{ margin: 0, fontSize: "31px", lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>{missing ? `We couldn't find order ${missing}.` : "We couldn't find a payment for this link."}</h1>
+            <p style={{ margin: 0, fontSize: "16.5px", lineHeight: 1.5 }}>
+              {missing ? "If you paid in the last minute, wait a moment and open the link again. Otherwise reply to your confirmation email and we'll sort it out." : "If you just paid, wait a few seconds and refresh. If you came back without paying, your report is one step away."}
+            </p>
             <a href="./?returned=1" className="cta"><b>Back to the report page</b></a>
           </>
         )}
       </div>
-      <Footer refundsHref="./#guarantee" />
+      <Footer />
     </main>
   );
 }

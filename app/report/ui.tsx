@@ -1,5 +1,7 @@
 "use client";
 
+import { AgreeLine } from "./Legal";
+
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import { cta, emailStep, exitPopup, recoveryPopup, PRICE, RECOVERY_PRICE } from "./content";
 import { metaTrack } from "./MetaPixel";
@@ -224,6 +226,7 @@ function EmailSheet({ onClose }: { onClose: () => void }) {
         {err && <p className="err">{err}</p>}
         <button type="submit" className="btn" disabled={busy}>{busy ? "One moment…" : emailStep.button}</button>
         <p style={{ margin: 0, fontSize: "13px", lineHeight: 1.45, color: "#67748A", textAlign: "center" }}>{emailStep.consent}</p>
+        <AgreeLine />
         <div style={{ display: "flex", justifyContent: "center", gap: "14px", fontSize: "12.5px", color: "#67748A" }}>
           <span>{emailStep.footer[0]}</span><span>·</span><span>{emailStep.footer[1]}</span><span>·</span><span>{emailStep.footer[2]}</span>
         </div>

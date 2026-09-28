@@ -44,11 +44,13 @@ export function metaTrack(event: string, params: Record<string, string | number>
 /** Loads the pixel and fires PageView on every route of the funnel. */
 export default function MetaPixel() {
   const pathname = usePathname();
+  const internal = /\/deliver(\/|$)/.test(pathname || ""); // the internal report-delivery page is not funnel traffic
   useEffect(() => {
+    if (internal) return;
     const fbq = ensureFbq();
     if (fbq) fbq("track", "PageView");
-  }, [pathname]);
-  return PIXEL_ID ? (
+  }, [pathname, internal]);
+  return PIXEL_ID && !internal ? (
     <noscript>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img height="1" width="1" style={{ display: "none" }} alt="" src={`https://www.facebook.com/tr?id=${PIXEL_ID}&ev=PageView&noscript=1`} />
