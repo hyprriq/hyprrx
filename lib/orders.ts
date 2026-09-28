@@ -133,6 +133,16 @@ export function fmtBoth(iso: string): string {
   return `${a.day}, ${a.time} IST (${b.time}${a.day === b.day ? "" : " " + b.day.split(" ")[0]} ET)`;
 }
 
+/** Internal emails: US Eastern only. "3:41 pm" and "3:41 pm ET · Tue 29 Sep". */
+export function fmtTimeET(iso: string): string {
+  const p = parts(iso, ZONES[1][0]);
+  return p ? p.time : "—";
+}
+export function fmtDueET(iso: string): string {
+  const p = parts(iso, ZONES[1][0]);
+  return p ? `${p.time} ET · ${p.day}` : "—";
+}
+
 /** Stripe dashboard link for the order's payment (test-mode aware). */
 export function stripePaymentUrl(o: Order): string {
   return `https://dashboard.stripe.com/${o.livemode ? "" : "test/"}payments/${o.piId}`;

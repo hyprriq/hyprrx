@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "../../../../lib/stripe";
 import { FUNNEL_TAG, funnelBase } from "../../../../lib/funnel";
 import { loopsEvent, loopsUpsert, loopsTransactional, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
-import { DELIVERY_HOURS, ensureOrderNo, fmtBoth, fmtIST } from "../../../../lib/orders";
+import { DELIVERY_HOURS, ensureOrderNo, fmtDueET, fmtTimeET } from "../../../../lib/orders";
 
 export const runtime = "nodejs";
 
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     console.error("[report/submit] stripe metadata", e instanceof Error ? e.message : e);
   }
 
-  // 2) Internal order card to the order inbox (uploads ride along as attachments). New order vs updated order.
+  // 2) Internal order card to the order inbox (uploads ride along as attachments; US Eastern times only). New order vs updated order.
   const website = /^https?:\/\//i.test(supplier_website) ? supplier_website : `https://${supplier_website}`;
   const vars = {
     orderNo,
@@ -103,24 +103,21 @@ export async function POST(req: NextRequest) {
     brands,
     category: category || "—",
     notes: notes.replace(/\s*\n+\s*/g, " · ") || "—",
-    files: fileNames || "none",
-    filesNote: newFileNames.length ? `${newFileNames.length === 1 ? "Attached to this email" : `${newFileNames.length} attached to this email`}${isUpdate && previousFiles ? "; earlier files are on the first order email" : ""}.` : isUpdate && previousFiles ? "On the first order email." : fileNames ? "" : "The buyer sent no files.",
+    files: (fileNames || "none") + (isUpdate && previousFiles && newFileNames.length ? " (new ones attached here; earlier ones on the first order email)" : ""),
     buyerEmail: email,
     amount: `${amount} · ${cs.metadata?.variant || "?"}${cs.metadata?.promo_code ? " · code " + cs.metadata.promo_code : ""}`,
-    utm: ["utm_source", "utm_medium", "utm_campaign", "utm_content"].map((k) => cs.metadata?.[k]).filter(Boolean).join(" / ") || "direct",
-    dueIST: fmtIST(dueAt), // subject line
-    dueBy: fmtBoth(dueAt), // "Tue 29 Sep, 1:11 am IST (3:41 pm Mon ET)"
-    submittedAt: fmtBoth(submittedAt),
+    // Internal emails show US Eastern only (America/New_York handles daylight saving)
+    dueTime: fmtTimeET(dueAt), // subject: "due 3:41 pm ET"
+    dueET: fmtDueET(dueAt), // body: "3:41 pm ET · Tue 29 Sep"
     formUrl,
     deliverUrl: `${base}/deliver/${orderNo}`,
     stripeUrl: `https://dashboard.stripe.com/${cs.livemode ? "" : "test/"}payments/${pi?.id || ""}`,
     // UPDATED ORDER only — empty strings hide the "was:" rows in the template
-    supplierWas: was("supplier_name", supplier_name),
-    websiteWas: was("supplier_website", supplier_website),
+    // supplier row shows name + website, so its "was:" covers both
+    supplierWas: isUpdate && (prev("supplier_name") !== supplier_name || prev("supplier_website") !== supplier_website) ? `${prev("supplier_name") || "(empty)"} · ${prev("supplier_website") || "(empty)"}` : "",
     brandsWas: was("brands", brands),
     categoryWas: was("category", category),
     notesWas: was("notes", notes).replace(/\s*\n+\s*/g, " · "),
-    updatedAt: fmtBoth(now),
   };
   const mail = await loopsTransactionalWithAttachments(isUpdate ? LOOPS_TX.orderUpdatedInternal : LOOPS_TX.orderInternal, ORDER_INBOX, vars, attachments);
 

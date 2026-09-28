@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ADMIN_COOKIE, adminKey, keyMatches } from "../../../lib/admin";
-import { fmtBoth, loadOrder, loadOrderByNo, stripePaymentUrl, type Order } from "../../../lib/orders";
+import { fmtDueET, loadOrder, loadOrderByNo, stripePaymentUrl, type Order } from "../../../lib/orders";
 import DeliverForm from "./DeliverForm";
 
 export const metadata = { title: { absolute: "Report delivery — HyprrIQ (internal)" }, robots: { index: false, follow: false } };
@@ -88,13 +88,13 @@ export default async function DeliverPage({ orderNo = "", sessionId = "", bad = 
               <Row k="Category" v={order.category || "—"} />
               <Row k="Notes" v={order.notes || "—"} />
               <Row k="Files" v={order.files ? `${order.files} (attached to the order email)` : "none"} />
-              <Row k="Form in" v={order.submittedAt ? fmtBoth(order.submittedAt) : "not yet — the 10-hour clock hasn't started"} />
-              <Row k="Due by" v={order.dueAt ? <strong>{fmtBoth(order.dueAt)}</strong> : "—"} />
-              {order.deliveredAt && <Row k="Sent" v={`${fmtBoth(order.deliveredAt)}${order.verdict ? ` · “${order.verdict}”` : ""}`} />}
+              <Row k="Form in" v={order.submittedAt ? fmtDueET(order.submittedAt) : "not yet — the 10-hour clock hasn't started"} />
+              <Row k="Due by" v={order.dueAt ? <strong>{fmtDueET(order.dueAt)}</strong> : "—"} />
+              {order.deliveredAt && <Row k="Sent" v={`${fmtDueET(order.deliveredAt)}${order.verdict ? ` · “${order.verdict}”` : ""}`} />}
               <Row k="Links" v={<><a href={stripePaymentUrl(order)} target="_blank" rel="noreferrer" style={{ color: "#1C4FE0" }}>Payment in Stripe</a> · <a href={`${up}thank-you?session_id=${order.sessionId}`} target="_blank" rel="noreferrer" style={{ color: "#1C4FE0" }}>Buyer&apos;s form</a></>} />
             </div>
 
-            <DeliverForm sessionId={order.sessionId} email={order.email} supplier={order.supplier_name} deliveredAt={order.deliveredAt ? fmtBoth(order.deliveredAt) : ""} submitted={order.submitted} />
+            <DeliverForm sessionId={order.sessionId} email={order.email} supplier={order.supplier_name} deliveredAt={order.deliveredAt ? fmtDueET(order.deliveredAt) : ""} submitted={order.submitted} />
 
             <form method="post" action="/api/report/deliver" style={{ marginTop: "12px" }}>
               <input type="hidden" name="action" value="logout" />
