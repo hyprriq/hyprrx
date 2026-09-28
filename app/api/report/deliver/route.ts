@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, stripeKeyKind } from "../../../../lib/stripe";
 import { funnelBase, ORDER_NO_RE } from "../../../../lib/funnel";
-import { loopsEvent, loopsUpsert, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
+import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
+import { sendMail, BUYER_REPLY_TO } from "../../../../lib/mail";
+import { reportReadyEmail } from "../../../../lib/email/templates";
 import { loadOrder } from "../../../../lib/orders";
 import { ADMIN_COOKIE, ADMIN_COOKIE_DAYS, adminKey, keyMatches } from "../../../../lib/admin";
 
@@ -11,7 +13,7 @@ const MAX_PDF_BYTES = 4 * 1024 * 1024; // Vercel request-body limit is 4.5 MB
 
 // Internal: delivers the finished report.
 //   POST (form)      action=login&key=…&session_id=…  → sets the admin cookie, back to /deliver
-//   POST (multipart) session_id + file (+ verdict)     → emails the PDF to the buyer via the branded "report ready" template,
+//   POST (multipart) session_id + file (+ verdict)     → emails the PDF to the buyer (Resend, attached) with the branded "report ready" email,
 //                                                        stamps report_delivered_at on the PaymentIntent, moves Loops to "delivered".
 export async function POST(req: NextRequest) {
   if (!adminKey()) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -62,12 +64,13 @@ export async function POST(req: NextRequest) {
   const filename = `HyprrIQ-Supplier-Report-${safeSupplier}.pdf`;
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
 
-  const sent = await loopsTransactionalWithAttachments(
-    LOOPS_TX.reportReady,
-    order.email,
-    { supplierName: order.supplier_name || "your supplier", verdict: verdict || "see page 1", orderNo: order.orderNo },
-    [{ filename, contentType: "application/pdf", data }],
-  );
+  const sent = await sendMail({
+    to: order.email,
+    email: reportReadyEmail({ supplierName: order.supplier_name || "your supplier", verdict: verdict || "see page 1", orderNo: order.orderNo || "" }),
+    replyTo: BUYER_REPLY_TO,
+    tag: "report_ready",
+    attachments: [{ filename, contentType: "application/pdf", data }],
+  });
   if (!sent.ok) return NextResponse.json({ error: sent.error || "Email could not be sent" }, { status: 502 });
 
   const deliveredAt = new Date().toISOString();

@@ -1,13 +1,5 @@
-// Loops (email) — events + contact upserts. Fails soft: the funnel must never break on email.
-// Transactional template ids (Loops team "Hyprr Retail LLC", group "Report funnel"). Drafts until Gautam publishes them.
-export const LOOPS_TX = {
-  paymentReceived: process.env.LOOPS_TX_PAYMENT_RECEIVED || "cmuk3t0ct2gfr0j3lhavcid5g",
-  reportReady: process.env.LOOPS_TX_REPORT_READY || "cmuk3t1dd2gow0j48vuzfw10x",
-  checklist: process.env.LOOPS_TX_CHECKLIST || "cmuk3t27b008s0j62swhhbkun",
-  orderInternal: process.env.LOOPS_TX_ORDER_ID || "cmuk3t39l1bf80j3qjtsxw50e",
-  orderConfirmed: process.env.LOOPS_TX_ORDER_CONFIRMED || "cmukwb4rl0a6l0j319cyr0wni",
-  orderUpdatedInternal: process.env.LOOPS_TX_ORDER_UPDATED || "cmukwbn6835uq0j4fwyr4u69l",
-};
+// Loops — contact properties + events only (they drive the two workflows and their exit rules).
+// Transactional emails moved to Resend (lib/mail.ts). Fails soft: the funnel must never break on email.
 const BASE = "https://app.loops.so/api/v1";
 
 function headers() {
@@ -54,32 +46,5 @@ export async function loopsFunnelStage(email: string): Promise<string> {
     return data?.[0]?.funnelStage || "";
   } catch {
     return "";
-  }
-}
-
-export type LoopsAttachment = { filename: string; contentType: string; data: string }; // data = base64
-
-/** Transactional email via a Loops template id (published in Loops; id from env). */
-export async function loopsTransactional(transactionalId: string, email: string, dataVariables: Record<string, string>) {
-  return loopsTransactionalWithAttachments(transactionalId, email, dataVariables, []);
-}
-
-/** Same, with file attachments (buyer uploads on the internal order email, the PDF on the report email). */
-export async function loopsTransactionalWithAttachments(transactionalId: string, email: string, dataVariables: Record<string, string>, attachments: LoopsAttachment[]): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
-  if (!process.env.LOOPS_API_KEY || !transactionalId) return { ok: false, skipped: true, error: "Email not configured" };
-  try {
-    const res = await fetch(`${BASE}/transactional`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ transactionalId, email, dataVariables, ...(attachments.length ? { attachments } : {}) }),
-    });
-    if (!res.ok) {
-      const text = (await res.text()).slice(0, 300);
-      console.error("[loops/transactional]", transactionalId, res.status, text);
-      return { ok: false, error: `Loops ${res.status}: ${text}` };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Loops unreachable" };
   }
 }

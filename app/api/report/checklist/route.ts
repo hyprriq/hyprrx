@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { funnelBase, isEmail, pickUtm } from "../../../../lib/funnel";
-import { loopsEvent, loopsTransactional, loopsUpsert, LOOPS_TX } from "../../../../lib/loops";
+import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
+import { sendMail, BUYER_REPLY_TO } from "../../../../lib/mail";
+import { checklistEmail } from "../../../../lib/email/templates";
 
 export const runtime = "nodejs";
 
@@ -16,6 +18,6 @@ export async function POST(req: NextRequest) {
   const url = `${base}/9-red-flags.pdf`;
   await loopsUpsert(email, { funnelStage: "checklist", ...utm });
   await loopsEvent(email, "checklist_requested", { url });
-  await loopsTransactional(LOOPS_TX.checklist, email, { checklistUrl: url, siteUrl: `${base}/email` });
+  await sendMail({ to: email, email: checklistEmail({ checklistUrl: url, siteUrl: `${base}/email` }), replyTo: BUYER_REPLY_TO, tag: "checklist" });
   return NextResponse.json({ ok: true, url });
 }

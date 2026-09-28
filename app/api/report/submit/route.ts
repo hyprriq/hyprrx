@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, stripeKeyKind } from "../../../../lib/stripe";
 import { FUNNEL_TAG, funnelBase } from "../../../../lib/funnel";
-import { loopsEvent, loopsUpsert, loopsTransactional, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
+import { loopsEvent, loopsUpsert } from "../../../../lib/loops";
+import { sendMail, BUYER_REPLY_TO, type MailAttachment } from "../../../../lib/mail";
+import { orderCardEmail, orderConfirmedEmail, type OrderCardData } from "../../../../lib/email/templates";
 import { DELIVERY_HOURS, ensureOrderNo, fmtDueET, fmtTimeET } from "../../../../lib/orders";
 
 export const runtime = "nodejs";
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
   if (!supplier_name || !supplier_website || !brands) return NextResponse.json({ error: "Supplier name, website and brands are required." }, { status: 400 });
 
   // files → base64 attachments (no storage anywhere; they only travel inside the order email)
-  const attachments: { filename: string; contentType: string; data: string }[] = [];
+  const attachments: MailAttachment[] = [];
   const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0).slice(0, MAX_FILES);
   for (const f of files) {
     if (f.size > MAX_BYTES) return NextResponse.json({ error: "Each file must be under 4 MB." }, { status: 400 });
@@ -93,9 +95,9 @@ export async function POST(req: NextRequest) {
     console.error("[report/submit] stripe metadata", `key ${stripeKeyKind()} ·`, e instanceof Error ? e.message : e);
   }
 
-  // 2) Internal order card to the order inbox (uploads ride along as attachments; US Eastern times only). New order vs updated order.
+  // 2) Internal order card to the order inbox via Resend (uploads ride along as attachments; US Eastern times only). New order vs updated order.
   const website = /^https?:\/\//i.test(supplier_website) ? supplier_website : `https://${supplier_website}`;
-  const vars = {
+  const vars: OrderCardData = {
     orderNo,
     supplierName: supplier_name,
     supplierWebsite: supplier_website,
@@ -119,17 +121,21 @@ export async function POST(req: NextRequest) {
     categoryWas: was("category", category),
     notesWas: was("notes", notes).replace(/\s*\n+\s*/g, " · "),
   };
-  const mail = await loopsTransactionalWithAttachments(isUpdate ? LOOPS_TX.orderUpdatedInternal : LOOPS_TX.orderInternal, ORDER_INBOX, vars, attachments);
+  const mail = await sendMail({
+    to: ORDER_INBOX,
+    email: orderCardEmail(vars, isUpdate),
+    replyTo: email || BUYER_REPLY_TO, // hit Reply and you're writing to the buyer
+    tag: isUpdate ? "order_updated_internal" : "order_internal",
+    attachments,
+  });
 
   // 3) Buyer: "Order confirmed" once, on the first submission (edits get no extra buyer email)
   if (!isUpdate) {
-    await loopsTransactional(LOOPS_TX.orderConfirmed, email, {
-      supplierName: supplier_name,
-      supplierWebsite: supplier_website,
-      brands,
-      files: fileNames || "none",
-      formUrl,
-      orderNo,
+    await sendMail({
+      to: email,
+      email: orderConfirmedEmail({ supplierName: supplier_name, supplierWebsite: supplier_website, brands, files: fileNames || "none", formUrl, orderNo }),
+      replyTo: BUYER_REPLY_TO,
+      tag: "order_confirmed",
     });
     await loopsUpsert(email, { funnelStage: "form_submitted", supplierName: supplier_name, orderNo });
     await loopsEvent(email, "form_submitted", { supplier: supplier_name, orderNo });
