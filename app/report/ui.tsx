@@ -85,7 +85,10 @@ export function FunnelProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // exit intent: desktop mouse leaves at the top; mobile back button or fast scroll up. Once per session, armed after 8s.
+  // Landing page only ("/" on report.hyprrx.com, "/report" on previews) — never on /deliver, /thank-you, /o/…, or legal pages.
   useEffect(() => {
+    const path = window.location.pathname.replace(/\/+$/, "");
+    if (path !== "" && path !== "/report") return;
     if (sessionStorage.getItem(SS_EXIT)) return;
     const armedAt = Date.now() + 8000;
     const fire = () => {

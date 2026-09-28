@@ -1,26 +1,39 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ADMIN_COOKIE, adminKey, keyMatches } from "../../../lib/admin";
-import { fmtDueET, loadOrder, loadOrderByNo, stripePaymentUrl, type Order } from "../../../lib/orders";
+import { fmtDueET, fmtIST, loadOrder, loadOrderByNo, stripePaymentUrl, type Order } from "../../../lib/orders";
 import DeliverForm from "./DeliverForm";
+import { DELIVER_CSS } from "./deliver.css";
 
 export const metadata = { title: { absolute: "Report delivery — HyprrIQ (internal)" }, robots: { index: false, follow: false } };
 
-const label: React.CSSProperties = { fontSize: "10.5px", color: "#67748A", paddingTop: "3px" };
-const cell: React.CSSProperties = { display: "grid", gridTemplateColumns: "96px 1fr", gap: "10px", padding: "8px 0", borderTop: "1px solid #E1E7F0", fontSize: "15px", lineHeight: 1.45 };
-const input: React.CSSProperties = { height: "50px", border: "1.5px solid #B9C6DB", borderRadius: "10px", padding: "0 14px", fontSize: "16px", color: "#0B1B33", background: "#fff", width: "100%" };
+/** Deadline state for the due bar: time left, overdue, or delivered. */
+function deadline(o: Order): { cls: string; left: string } {
+  if (o.deliveredAt) return { cls: "done", left: "Delivered" };
+  if (!o.dueAt) return { cls: "none", left: "Clock not started" };
+  const mins = Math.round((new Date(o.dueAt).getTime() - Date.now()) / 60000);
+  const hm = (m: number) => `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+  if (mins < 0) return { cls: "late", left: `Overdue by ${hm(-mins)}` };
+  return { cls: mins < 180 ? "soon" : "", left: `${hm(mins)} left` };
+}
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+export function Shell({ env, children }: { env?: "live" | "test"; children: React.ReactNode }) {
   return (
-    <div style={cell}>
-      <span className="mono" style={label}>{k}</span>
-      <span style={{ color: "#0B1B33", overflowWrap: "anywhere" }}>{v}</span>
+    <div className="dv">
+      <style dangerouslySetInnerHTML={{ __html: DELIVER_CSS }} />
+      <header className="dv-top">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/report/hyprriq-logo-reversed.svg" alt="HyprrIQ" />
+        <span className="t">Report delivery</span>
+        {env && <span className={`env ${env}`}>{env === "live" ? "Live" : "Test mode"}</span>}
+      </header>
+      <main className="dv-main">{children}</main>
     </div>
   );
 }
 
-// Internal page: paste (or click from the order email) an order link, attach the finished PDF, send.
-// Sends the branded "Your report is ready" email with the PDF attached; nothing is stored anywhere but Stripe metadata.
+// Internal page: open an order (from the order email), attach the finished PDF, send.
+// Sends the branded "Your supplier report is ready" email with the PDF attached; state lives only in Stripe metadata.
 export default async function DeliverPage({ orderNo = "", sessionId = "", bad = "", nested = false }: { orderNo?: string; sessionId?: string; bad?: string; nested?: boolean }) {
   const up = nested ? "../" : "./"; // relative links work on report.hyprrx.com (root) and on previews (/report)
   if (!adminKey()) notFound();
@@ -32,78 +45,147 @@ export default async function DeliverPage({ orderNo = "", sessionId = "", bad = 
   // old links carried the Stripe id; move them onto the order-number URL
   if (order && !orderNo && order.orderNo) redirect(`${up}deliver/${order.orderNo}`);
 
-  return (
-    <main className="page" style={{ minHeight: "100vh", background: "#fff" }}>
-      <div style={{ height: "56px", padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0B1B33", borderBottom: "1px solid #16305A" }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/report/hyprriq-logo-reversed.svg" alt="HyprrIQ" style={{ height: "24px", width: "auto" }} />
-        <span className="mono" style={{ fontSize: "10.5px", color: "#D8F1FF" }}>Internal · Report delivery</span>
-      </div>
+  if (!authed)
+    return (
+      <Shell>
+        <div className="dv-card dv-narrow">
+          <h1>Sign in</h1>
+          <p className="dv-muted">Enter the delivery key once on this device. It stays signed in for 30 days.</p>
+          {bad && <p className="dv-err">That key didn&apos;t match.</p>}
+          <form method="post" action="/api/report/deliver" style={{ display: "grid", gap: "12px" }}>
+            <input type="hidden" name="action" value="login" />
+            <input type="hidden" name="ref" value={ref} />
+            <label className="dv-field">
+              Delivery key
+              <input className="dv-input" name="key" type="password" autoComplete="current-password" required />
+            </label>
+            <button type="submit" className="dv-btn">Sign in</button>
+          </form>
+        </div>
+      </Shell>
+    );
 
-      <div style={{ padding: "32px 20px 60px", display: "flex", flexDirection: "column", gap: "18px" }}>
-        {!authed ? (
+  if (!ref || !order)
+    return (
+      <Shell>
+        <div className="dv-card dv-narrow">
+          <h1>{ref ? `Order ${ref} not found` : "Open an order"}</h1>
+          <p className="dv-muted">
+            {ref ? "It may be in the other Stripe mode (test vs live), or it was paid under a minute ago. Try again shortly. " : ""}
+            Click <strong>Send the finished report</strong> in the order email, or type the order number.
+          </p>
+          <form method="get" action={`${up}deliver`} style={{ display: "grid", gap: "12px" }}>
+            <label className="dv-field">
+              Order number
+              <input className="dv-input" name="no" defaultValue={orderNo} placeholder="HX-260928-7Q4K" required autoCapitalize="characters" />
+            </label>
+            <button type="submit" className="dv-btn">Open order</button>
+          </form>
+        </div>
+      </Shell>
+    );
+
+  return <Shell env={order.livemode ? "live" : "test"}><OrderView order={order} up={up} /></Shell>;
+}
+
+/** The signed-in order view (pure: no data loading), so it can be previewed with sample data. */
+export function OrderView({ order, up }: { order: Order; up: string }) {
+  const d = deadline(order);
+  const status = order.deliveredAt ? { cls: "done", txt: "Report sent" } : order.submitted ? { cls: "wait", txt: "Awaiting report" } : { cls: "form", txt: "Form not in yet" };
+  const site = order.supplier_website ? (order.supplier_website.startsWith("http") ? order.supplier_website : `https://${order.supplier_website}`) : "";
+  const brands = (order.brands || "").split(",").map((b) => b.trim()).filter(Boolean);
+
+  return (
+    <>
+      <section className="dv-card dv-head">
+        <span className={`dv-status ${status.cls}`}>{status.txt}</span>
+        <h1>{order.supplier_name || "Supplier not named yet"}</h1>
+        <div className="dv-meta">
+          <span className="dv-no">{order.orderNo || "—"}</span>
+          <a href={`mailto:${order.email}`}>{order.email}</a>
+          <span>
+            Paid {order.amount}
+            {order.promoCode ? ` · code ${order.promoCode}` : ""}
+          </span>
+        </div>
+      </section>
+
+      <section className={`dv-due ${d.cls}`}>
+        <span className="lbl">{order.deliveredAt ? "Delivered" : "Due by"}</span>
+        {order.deliveredAt ? (
           <>
-            <h1 className="disp" style={{ margin: 0, fontSize: "28px", lineHeight: 1.1, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>Team sign-in</h1>
-            <p style={{ margin: 0, fontSize: "15px", color: "#67748A" }}>Enter the delivery key once on this device; it stays signed in for 30 days.</p>
-            {bad && <p style={{ margin: 0, fontSize: "14px", color: "#C1272D" }}>That key didn&apos;t match.</p>}
-            <form method="post" action="/api/report/deliver" className="form">
-              <input type="hidden" name="action" value="login" />
-              <input type="hidden" name="ref" value={ref} />
-              <label>
-                Delivery key
-                <input name="key" type="password" autoComplete="current-password" required style={input} />
-              </label>
-              <button type="submit" className="cta" style={{ minHeight: "56px" }}><b>Sign in</b></button>
-            </form>
+            <span className="when">{fmtDueET(order.deliveredAt)}</span>
+            <span className="ist">{fmtIST(order.deliveredAt)}</span>
           </>
-        ) : !ref || !order ? (
+        ) : order.dueAt ? (
           <>
-            <h1 className="disp" style={{ margin: 0, fontSize: "28px", lineHeight: 1.1, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>{ref ? `Order ${ref} not found` : "Which order?"}</h1>
-            <p style={{ margin: 0, fontSize: "15px", lineHeight: 1.5, color: "#1F2A3D" }}>
-              {ref ? "Not a funnel order on this Stripe mode (test vs live), or paid less than a minute ago — try again shortly. " : ""}
-              Click <strong>send report</strong> in the order email, or type the order number from it.
-            </p>
-            <form method="get" action={`${up}deliver`} className="form">
-              <label>
-                Order number
-                <input name="no" defaultValue={orderNo} placeholder="HX-240928-7Q4K" required style={input} />
-              </label>
-              <button type="submit" className="cta" style={{ minHeight: "56px" }}><b>Open order</b></button>
-            </form>
+            <span className="when">{fmtDueET(order.dueAt)}</span>
+            <span className="ist">{fmtIST(order.dueAt)}</span>
           </>
         ) : (
-          <>
-            <span className="tag" style={{ alignSelf: "flex-start", background: order.deliveredAt ? "#DDF1E5" : order.submitted ? "#E9EFFF" : "#FFF3CD", color: order.deliveredAt ? "#0F5E36" : order.submitted ? "#16305A" : "#7A5A00" }}>
-              {order.deliveredAt ? "Report sent" : order.submitted ? "Awaiting report" : "Form not in yet"}
-            </span>
-            <h1 className="disp" style={{ margin: 0, fontSize: "28px", lineHeight: 1.1, fontWeight: 800, letterSpacing: "-0.02em", color: "#0B1B33" }}>{order.supplier_name || "Supplier not named yet"}</h1>
-            <p style={{ margin: 0, fontSize: "15px", lineHeight: 1.5, color: "#1F2A3D" }}>
-              Order <strong>{order.orderNo || "—"}</strong> · <a href={`mailto:${order.email}`} style={{ color: "#1C4FE0" }}>{order.email}</a> · paid {order.amount}{order.promoCode ? ` (code ${order.promoCode})` : ""} · {order.livemode ? "live" : "test mode"}
-            </p>
-
-            <div style={{ border: "3px solid #0B1B33", borderRadius: "8px", padding: "16px 18px 6px", display: "flex", flexDirection: "column", gap: "2px" }}>
-              <strong className="disp" style={{ fontSize: "18px", color: "#0B1B33", marginBottom: "6px" }}>The order</strong>
-              <Row k="Website" v={order.supplier_website ? <a href={order.supplier_website.startsWith("http") ? order.supplier_website : `https://${order.supplier_website}`} target="_blank" rel="noreferrer" style={{ color: "#1C4FE0" }}>{order.supplier_website}</a> : "—"} />
-              <Row k="Brands" v={order.brands || "—"} />
-              <Row k="Category" v={order.category || "—"} />
-              <Row k="Notes" v={order.notes || "—"} />
-              <Row k="Files" v={order.files ? `${order.files} (attached to the order email)` : "none"} />
-              <Row k="Form in" v={order.submittedAt ? fmtDueET(order.submittedAt) : "not yet — the 10-hour clock hasn't started"} />
-              <Row k="Due by" v={order.dueAt ? <strong>{fmtDueET(order.dueAt)}</strong> : "—"} />
-              {order.deliveredAt && <Row k="Sent" v={`${fmtDueET(order.deliveredAt)}${order.verdict ? ` · “${order.verdict}”` : ""}`} />}
-              <Row k="Links" v={<><a href={stripePaymentUrl(order)} target="_blank" rel="noreferrer" style={{ color: "#1C4FE0" }}>Payment in Stripe</a> · <a href={`${up}thank-you?session_id=${order.sessionId}`} target="_blank" rel="noreferrer" style={{ color: "#1C4FE0" }}>Buyer&apos;s form</a></>} />
-            </div>
-
-            <DeliverForm sessionId={order.sessionId} email={order.email} supplier={order.supplier_name} deliveredAt={order.deliveredAt ? fmtDueET(order.deliveredAt) : ""} submitted={order.submitted} />
-
-            <form method="post" action="/api/report/deliver" style={{ marginTop: "12px" }}>
-              <input type="hidden" name="action" value="logout" />
-              <input type="hidden" name="ref" value={order.orderNo} />
-              <button type="submit" style={{ background: "none", border: 0, padding: 0, fontSize: "13px", color: "#67748A", textDecoration: "underline", cursor: "pointer" }}>Sign out on this device</button>
-            </form>
-          </>
+          <span className="when">Starts when the buyer sends the supplier form</span>
         )}
+        <span className="left">{d.left}</span>
+      </section>
+
+      <div className="dv-grid">
+        <section className="dv-card">
+          <h2>The order</h2>
+          <dl className="dv-dl">
+            <div>
+              <dt>Website</dt>
+              <dd>{site ? <a href={site} target="_blank" rel="noreferrer">{order.supplier_website}</a> : "—"}</dd>
+            </div>
+            <div>
+              <dt>Brands</dt>
+              <dd>{brands.length ? <span className="dv-chips">{brands.map((b) => <span key={b} className="dv-chip">{b}</span>)}</span> : "—"}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{order.category || "—"}</dd>
+            </div>
+            <div>
+              <dt>Notes</dt>
+              <dd style={{ whiteSpace: "pre-wrap" }}>{order.notes || "—"}</dd>
+            </div>
+            <div>
+              <dt>Files</dt>
+              <dd>{order.files ? <>{order.files} <span className="dv-muted">(attached to the order email)</span></> : "None"}</dd>
+            </div>
+            <div>
+              <dt>Form received</dt>
+              <dd>{order.submittedAt ? <>{fmtDueET(order.submittedAt)} <span className="dv-muted">· {fmtIST(order.submittedAt)}</span></> : "Not yet"}</dd>
+            </div>
+            {order.deliveredAt && (
+              <div>
+                <dt>Verdict sent</dt>
+                <dd>{order.verdict || "—"}</dd>
+              </div>
+            )}
+            <div>
+              <dt>Links</dt>
+              <dd>
+                <a href={stripePaymentUrl(order)} target="_blank" rel="noreferrer">Payment in Stripe</a>
+                {" · "}
+                <a href={`${up}thank-you?session_id=${order.sessionId}`} target="_blank" rel="noreferrer">Buyer&apos;s form</a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="dv-card dv-send">
+          <DeliverForm sessionId={order.sessionId} email={order.email} supplier={order.supplier_name} deliveredAt={order.deliveredAt ? fmtDueET(order.deliveredAt) : ""} submitted={order.submitted} />
+        </section>
       </div>
-    </main>
+
+      <div className="dv-foot">
+        <a href={`${up}deliver`} className="dv-muted" style={{ fontSize: "13px" }}>Open another order</a>
+        <form method="post" action="/api/report/deliver">
+          <input type="hidden" name="action" value="logout" />
+          <input type="hidden" name="ref" value={order.orderNo} />
+          <button type="submit" className="dv-link">Sign out on this device</button>
+        </form>
+      </div>
+    </>
   );
 }
