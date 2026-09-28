@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe } from "../../../../lib/stripe";
+import { stripe, stripeKeyKind } from "../../../../lib/stripe";
 import { FUNNEL_TAG, funnelBase } from "../../../../lib/funnel";
 import { loopsEvent, loopsUpsert, loopsTransactional, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
 import { DELIVERY_HOURS, ensureOrderNo, fmtDueET, fmtTimeET } from "../../../../lib/orders";
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
     await s.checkout.sessions.update(sessionId, { metadata: { ...cs.metadata, order_no: orderNo, form_submitted: "1" } }).catch(() => {});
   } catch (e) {
-    console.error("[report/submit] stripe metadata", e instanceof Error ? e.message : e);
+    console.error("[report/submit] stripe metadata", `key ${stripeKeyKind()} ·`, e instanceof Error ? e.message : e);
   }
 
   // 2) Internal order card to the order inbox (uploads ride along as attachments; US Eastern times only). New order vs updated order.

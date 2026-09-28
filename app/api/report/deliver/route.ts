@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe } from "../../../../lib/stripe";
+import { stripe, stripeKeyKind } from "../../../../lib/stripe";
 import { funnelBase, ORDER_NO_RE } from "../../../../lib/funnel";
 import { loopsEvent, loopsUpsert, loopsTransactionalWithAttachments, LOOPS_TX } from "../../../../lib/loops";
 import { loadOrder } from "../../../../lib/orders";
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (e) {
-    console.error("[report/deliver] stripe metadata", e instanceof Error ? e.message : e);
+    console.error("[report/deliver] stripe metadata", `key ${stripeKeyKind()} ·`, e instanceof Error ? e.message : e);
   }
   // Loops: stage "delivered" (exit for every reminder workflow) + an event a future follow-up could hang off.
   await loopsUpsert(order.email, { funnelStage: "delivered", deliveredAt });
