@@ -50,5 +50,26 @@ export const thankYou = {
   },
   button: "Start my report",
   line: "Your report arrives within 10 hours of this form.",
-  done: "Got it — your report arrives within 10 hours.",
+  sentTo: "Confirmation sent to",
+};
+
+// Confirmation state (after the supplier form) — Gautam 2026-09-28
+export const confirmed = {
+  tag: "Order confirmed",
+  title: "You're all set. Your report is on its way.",
+  line: (email: string) => `Your report arrives at ${email} within 10 hours.`,
+  sentTitle: "What you sent us",
+  wrong: "Something wrong? Reply to your confirmation email.",
+  nextTitle: "What happens next",
+  steps: ["We research your supplier.", "A person reviews the findings.", "Your PDF report lands in your inbox within 10 hours."],
+  small: "Add reports@mail.hyprrx.com to your contacts so it doesn't land in spam. We never contact your supplier.",
+};
+
+// Revisit of the form link after it was submitted
+export const review = {
+  title: "You've already sent us these details",
+  ok: "Looks right",
+  edit: "Edit and resubmit",
+  updateButton: "Update my details",
+  updated: "Details updated.",
 };

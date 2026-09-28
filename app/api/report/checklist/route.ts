@@ -12,9 +12,10 @@ export async function POST(req: NextRequest) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!isEmail(email)) return NextResponse.json({ error: "Enter a valid email." }, { status: 400 });
   const utm = pickUtm(body.utm);
-  const url = `${funnelBase(req)}/9-red-flags.pdf`;
+  const base = funnelBase(req);
+  const url = `${base}/9-red-flags.pdf`;
   await loopsUpsert(email, { funnelStage: "checklist", ...utm });
   await loopsEvent(email, "checklist_requested", { url });
-  await loopsTransactional(LOOPS_TX.checklist, email, { checklistUrl: url });
+  await loopsTransactional(LOOPS_TX.checklist, email, { checklistUrl: url, siteUrl: `${base}/email` });
   return NextResponse.json({ ok: true, url });
 }

@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe, RECOVERY_COUPON_ID } from "../../../../lib/stripe";
 import { FUNNEL_TAG } from "../../../../lib/funnel";
-import { loopsEvent, loopsTransactional, loopsUpsert, LOOPS_TX } from "../../../../lib/loops";
+import { loopsEvent, loopsFunnelStage, loopsUpsert } from "../../../../lib/loops";
 import { metaPurchase } from "../../../../lib/meta";
 
 export const runtime = "nodejs";
 
 // Stripe → Loops bridge. Events:
-//   checkout.session.completed → "paid"               (stops recovery, starts form reminders)
+//   checkout.session.completed → "paid"               (Loops workflow: +15 min "tell us about your supplier" unless the form is in, then reminders)
 //   checkout.session.expired   → "checkout_abandoned" (starts +1h / +24h $59 / +60h recovery)
+// No buyer email is sent from here: the "Order confirmed" email goes out from /api/report/submit when the form arrives.
+// Links are built from the base URL the buyer actually used (metadata.source_url) so they work on previews and on report.hyprrx.com.
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   const sig = req.headers.get("stripe-signature");
@@ -29,11 +31,11 @@ export async function POST(req: NextRequest) {
     const email = (cs.customer_details?.email || cs.customer_email || cs.metadata?.email || "").toLowerCase();
     if (!email) return NextResponse.json({ ignored: "no email" });
 
+    const base = (cs.metadata?.source_url || "https://report.hyprrx.com/").replace(/\/$/, "");
     if (event.type === "checkout.session.completed" && cs.payment_status === "paid") {
-      const formUrl = `https://report.hyprrx.com/thank-you?session_id=${cs.id}`;
+      const formUrl = `${base}/thank-you?session_id=${cs.id}`;
       await loopsUpsert(email, { funnelStage: "paid", paidAt: new Date().toISOString() });
       await loopsEvent(email, "paid", { amount: (cs.amount_total || 0) / 100, variant: cs.metadata?.variant || "", orderId: cs.id, formUrl });
-      await loopsTransactional(LOOPS_TX.paymentReceived, email, { formUrl, orderId: cs.id });
       // Meta Conversions API — same event_id as the browser Purchase on /thank-you, so Meta counts it once
       const m = cs.metadata || {};
       await metaPurchase({
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
         email,
         value: (cs.amount_total || 0) / 100,
         currency: cs.currency || "usd",
-        sourceUrl: m.source_url ? `${m.source_url.replace(/\/$/, "")}/thank-you` : "https://report.hyprrx.com/thank-you",
+        sourceUrl: `${base}/thank-you`,
         userAgent: m.meta_ua,
         ip: m.meta_ip,
         fbp: m.meta_fbp,
@@ -49,6 +51,9 @@ export async function POST(req: NextRequest) {
         orderId: cs.id,
       });
     } else if (event.type === "checkout.session.expired") {
+      // A buyer who already paid through another session gets no recovery sequence.
+      const stage = await loopsFunnelStage(email);
+      if (stage === "paid" || stage === "form_submitted") return NextResponse.json({ ignored: "already paid" });
       // unique $59 code for the +24h email (valid ~72h so it covers the send + 48h)
       let promoCode = "";
       try {
@@ -64,7 +69,7 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.error("[report/webhook] promo code", e instanceof Error ? e.message : e);
       }
-      const recoveryUrl = promoCode ? `https://report.hyprrx.com/?code=${promoCode}` : "https://report.hyprrx.com/?returned=1";
+      const recoveryUrl = promoCode ? `${base}/?code=${promoCode}` : `${base}/?returned=1`;
       await loopsUpsert(email, { funnelStage: "abandoned" });
       await loopsEvent(email, "checkout_abandoned", { recoveryUrl, promoCode, variant: cs.metadata?.variant || "" });
     }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "../../../../lib/stripe";
-import { FUNNEL_TAG } from "../../../../lib/funnel";
-import { loopsEvent, loopsUpsert, LOOPS_TX } from "../../../../lib/loops";
+import { FUNNEL_TAG, funnelBase } from "../../../../lib/funnel";
+import { loopsEvent, loopsUpsert, loopsTransactional, LOOPS_TX } from "../../../../lib/loops";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,8 @@ function str(fd: FormData, k: string, max = 2000) {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
 }
 
+// One order = one Checkout Session = one PaymentIntent. The supplier form only ever writes metadata on that
+// PaymentIntent, so submitting twice (or editing) can never create a second order or a second charge.
 export async function POST(req: NextRequest) {
   let fd: FormData;
   try {
@@ -28,12 +30,15 @@ export async function POST(req: NextRequest) {
   const s = stripe();
   let cs;
   try {
-    cs = await s.checkout.sessions.retrieve(sessionId);
+    cs = await s.checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] });
   } catch {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
   if (cs.payment_status !== "paid" || cs.metadata?.funnel !== FUNNEL_TAG) return NextResponse.json({ error: "Payment not found for this order" }, { status: 402 });
   const email = (cs.customer_details?.email || cs.customer_email || "").toLowerCase();
+  const pi = cs.payment_intent && typeof cs.payment_intent !== "string" ? cs.payment_intent : null;
+  const isUpdate = cs.metadata?.form_submitted === "1";
+  const previousFiles = (isUpdate && pi?.metadata?.files) || "";
 
   const supplier_name = str(fd, "supplier_name", 120);
   const supplier_website = str(fd, "supplier_website", 200);
@@ -51,10 +56,14 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(await f.arrayBuffer());
     attachments.push({ filename: f.name.replace(/[^\w.\-]+/g, "_").slice(0, 80), contentType: f.type, data: buf.toString("base64") });
   }
+  const newFileNames = attachments.map((a) => a.filename);
+  const fileNames = [...previousFiles.split(", ").filter(Boolean), ...newFileNames].join(", ").slice(0, 500);
 
   const amount = ((cs.amount_total || 0) / 100).toFixed(2);
+  const base = funnelBase(req);
+  const formUrl = `${base}/thank-you?session_id=${sessionId}`;
   const summary = [
-    `ORDER ${sessionId}`,
+    `${isUpdate ? "UPDATED ORDER" : "ORDER"} ${sessionId}`,
     `Paid: $${amount} ${cs.currency?.toUpperCase()} · variant ${cs.metadata?.variant || "?"}${cs.metadata?.promo_code ? " · code " + cs.metadata.promo_code : ""}`,
     `Buyer: ${email}`,
     `Supplier: ${supplier_name}`,
@@ -62,42 +71,51 @@ export async function POST(req: NextRequest) {
     `Brands: ${brands}`,
     `Product category: ${category || "—"}`,
     `Anything we should know: ${notes || "—"}`,
-    `Files: ${attachments.length ? attachments.map((a) => a.filename).join(", ") : "none"}`,
+    `Files: ${fileNames || "none"}${isUpdate && newFileNames.length ? ` (new in this email: ${newFileNames.join(", ")})` : ""}`,
     `UTM: ${["utm_source", "utm_medium", "utm_campaign", "utm_content"].map((k) => cs.metadata?.[k]).filter(Boolean).join(" / ") || "—"}`,
+    `Form: ${formUrl}`,
   ].join("\n");
 
   // 1) Stripe is the system of record: PaymentIntent metadata (500 chars per value)
   try {
-    const piId = typeof cs.payment_intent === "string" ? cs.payment_intent : cs.payment_intent?.id;
-    if (piId) {
-      await s.paymentIntents.update(piId, {
+    if (pi) {
+      await s.paymentIntents.update(pi.id, {
         metadata: {
           supplier_name: supplier_name.slice(0, 500),
           supplier_website: supplier_website.slice(0, 500),
           brands: brands.slice(0, 500),
           category,
           notes: notes.slice(0, 500),
-          files: attachments.map((a) => a.filename).join(", ").slice(0, 500),
-          form_submitted_at: new Date().toISOString(),
+          files: fileNames,
+          [isUpdate ? "form_updated_at" : "form_submitted_at"]: new Date().toISOString(),
         },
       });
     }
-    // flag the session so a refresh of the thank-you page shows "Got it"
     await s.checkout.sessions.update(sessionId, { metadata: { ...cs.metadata, form_submitted: "1" } }).catch(() => {});
   } catch (e) {
     console.error("[report/submit] stripe metadata", e instanceof Error ? e.message : e);
   }
 
-  // 2) Order email to Gautam (Loops transactional template; attachments ride along)
-  const txId = LOOPS_TX.orderInternal;
-  const mail = await loopsTransactionalWithAttachments(txId, ORDER_INBOX, { summary, supplier_name, supplier_website, brands, buyer_email: email, order_id: sessionId }, attachments);
+  const vars = { summary, supplier_name, supplier_website, brands, buyer_email: email, order_id: sessionId };
+  // 2) Internal email to Gautam (plain; attachments ride along). New order vs updated order.
+  const mail = await loopsTransactionalWithAttachments(isUpdate ? LOOPS_TX.orderUpdatedInternal : LOOPS_TX.orderInternal, ORDER_INBOX, vars, attachments);
 
-  // 3) Loops: buyer moves to "form submitted" (stops form reminders)
-  await loopsUpsert(email, { funnelStage: "form_submitted", supplierName: supplier_name });
-  await loopsEvent(email, "form_submitted", { supplier: supplier_name, orderId: sessionId });
+  // 3) Buyer: "Order confirmed" once, on the first submission (edits get no extra buyer email)
+  if (!isUpdate) {
+    await loopsTransactional(LOOPS_TX.orderConfirmed, email, {
+      supplierName: supplier_name,
+      supplierWebsite: supplier_website,
+      brands,
+      files: fileNames || "none",
+      formUrl,
+      orderId: sessionId,
+    });
+    await loopsUpsert(email, { funnelStage: "form_submitted", supplierName: supplier_name });
+    await loopsEvent(email, "form_submitted", { supplier: supplier_name, orderId: sessionId });
+  }
 
-  if (!mail.ok) console.error("[report/submit] order email not sent — Stripe metadata holds the order", sessionId);
-  return NextResponse.json({ ok: true });
+  if (!mail.ok) console.error("[report/submit] internal email not sent — Stripe metadata holds the order", sessionId);
+  return NextResponse.json({ ok: true, updated: isUpdate, saved: { supplier_name, supplier_website, brands, category, notes, files: fileNames } });
 }
 
 async function loopsTransactionalWithAttachments(transactionalId: string, email: string, dataVariables: Record<string, string>, attachments: { filename: string; contentType: string; data: string }[]) {
@@ -106,8 +124,9 @@ async function loopsTransactionalWithAttachments(transactionalId: string, email:
     const res = await fetch("https://app.loops.so/api/v1/transactional", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.LOOPS_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ transactionalId, email, dataVariables, attachments }),
+      body: JSON.stringify({ transactionalId, email, dataVariables, ...(attachments.length ? { attachments } : {}) }),
     });
+    if (!res.ok) console.error("[report/submit] loops", res.status, (await res.text()).slice(0, 200));
     return { ok: res.ok };
   } catch {
     return { ok: false };

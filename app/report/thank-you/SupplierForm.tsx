@@ -1,24 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { thankYou } from "../content";
+import { review, thankYou } from "../content";
+import type { Saved } from "./ThankYouFlow";
 
 const MAX_FILES = 2;
 const MAX_MB = 4;
 
-export default function SupplierForm({ sessionId, prefill, already }: { sessionId: string; prefill: { supplier_name: string; supplier_website: string }; already: boolean }) {
-  const [done, setDone] = useState(already);
+export default function SupplierForm({ sessionId, prefill, editing, onDone }: { sessionId: string; prefill: Saved; editing: boolean; onDone: (saved: Saved) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const f = thankYou.fields;
-
-  if (done)
-    return (
-      <div style={{ padding: "20px 18px", border: "3px solid #0B1B33", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
-        <strong className="disp" style={{ fontSize: "21px", color: "#0B1B33" }}>{thankYou.done}</strong>
-        <p style={{ margin: 0, fontSize: "15.5px", lineHeight: 1.5 }}>Reply to any email from us if something changes. We never contact your supplier.</p>
-      </div>
-    );
 
   return (
     <form
@@ -36,8 +28,7 @@ export default function SupplierForm({ sessionId, prefill, already }: { sessionI
           const res = await fetch("/api/report/submit", { method: "POST", body: fd });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "Could not submit");
-          setDone(true);
-          window.scrollTo({ top: 0 });
+          onDone(data.saved as Saved);
         } catch (er) {
           setErr(er instanceof Error ? er.message : "Something went wrong.");
         } finally {
@@ -58,25 +49,26 @@ export default function SupplierForm({ sessionId, prefill, already }: { sessionI
       </label>
       <label>
         {f.brands} * <span className="hint">({f.brandsHint})</span>
-        <input name="brands" required maxLength={300} />
+        <input name="brands" required maxLength={300} defaultValue={prefill.brands} />
       </label>
       <label>
         {f.category}
-        <input name="category" maxLength={120} />
+        <input name="category" maxLength={120} defaultValue={prefill.category} />
       </label>
       <label>
         {f.notes}
-        <textarea name="notes" rows={4} maxLength={2000} />
+        <textarea name="notes" rows={4} maxLength={2000} defaultValue={prefill.notes} />
       </label>
       <label>
         {f.upload} <span className="hint">({f.uploadHint} · PDF, JPG or PNG · {MAX_MB} MB each)</span>
+        {editing && prefill.files && <span className="hint" style={{ display: "block" }}>Already on file: {prefill.files}. Add a file here only if you want to send another one.</span>}
         <input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
       </label>
       {err && <p style={{ margin: 0, fontSize: "13px", color: "#C1272D" }}>{err}</p>}
       <button type="submit" className="cta" disabled={busy}>
-        <b>{busy ? "Sending…" : thankYou.button}</b>
+        <b>{busy ? "Sending…" : editing ? review.updateButton : thankYou.button}</b>
       </button>
-      <p style={{ margin: 0, fontSize: "13.5px", color: "#67748A", textAlign: "center" }}>{thankYou.line}</p>
+      {!editing && <p style={{ margin: 0, fontSize: "13.5px", color: "#67748A", textAlign: "center" }}>{thankYou.line}</p>}
     </form>
   );
 }
