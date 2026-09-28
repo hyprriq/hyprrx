@@ -29,15 +29,17 @@ export async function POST(req: NextRequest) {
     for (const [k, v] of Object.entries({ meta_ua, meta_ip, meta_fbp, meta_fbc })) if (v) metadata[k] = v;
 
     let discounts: { promotion_code: string }[] | undefined;
-    const givenCode = typeof body.code === "string" && /^R59-[A-Z0-9]{4,10}$/i.test(body.code) ? body.code.toUpperCase() : "";
+    // ?code= from the page: an R59-… code from a recovery email, or any other active promotion code on this Stripe account
+    // (live mode in Production). Applied only if Stripe still reports it active and unexpired; otherwise full price.
+    const givenCode = typeof body.code === "string" && /^[A-Z0-9][A-Z0-9_-]{2,30}$/i.test(body.code) ? body.code.toUpperCase() : "";
     if (givenCode) {
-      // code from a recovery email: reuse it if it is still active
       const found = await s.promotionCodes.list({ code: givenCode, active: true, limit: 1 });
       const pc = found.data[0];
-      if (pc && (!pc.expires_at || pc.expires_at > Math.floor(Date.now() / 1000))) {
+      const usable = pc && (!pc.expires_at || pc.expires_at > Math.floor(Date.now() / 1000)) && (!pc.max_redemptions || pc.times_redeemed < pc.max_redemptions);
+      if (usable) {
         discounts = [{ promotion_code: pc.id }];
         metadata.promo_code = givenCode;
-        metadata.variant = "recovery59";
+        metadata.variant = /^R59-/.test(givenCode) ? "recovery59" : "promo";
       }
     }
     if (recover && !discounts) {

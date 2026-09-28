@@ -66,13 +66,17 @@ export function FunnelProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     captureUtm();
     const p = new URLSearchParams(window.location.search);
+    // ?code= — any Stripe promotion code (R59-… from the recovery emails, or a manual one like HXGOLIVE3).
+    // It rides along to Checkout, which applies it if it is still active. Only R59 codes open the $59 return popup.
     const code = p.get("code");
-    if (code && /^R59-[A-Z0-9]{4,10}$/i.test(code)) {
-      try { sessionStorage.setItem(SS_CODE, code.toUpperCase()); } catch {}
+    const validCode = !!code && /^[A-Z0-9][A-Z0-9_-]{2,30}$/i.test(code);
+    if (validCode) {
+      try { sessionStorage.setItem(SS_CODE, code!.toUpperCase()); } catch {}
     }
     if (p.get("returned") === "1" || code) {
       const email = localStorage.getItem(LS_EMAIL);
-      queueMicrotask(() => (email ? setRecoverOpen(true) : setEmailOpen(true)));
+      const isR59 = validCode && /^R59-/i.test(code!);
+      queueMicrotask(() => (email && (isR59 || !code) ? setRecoverOpen(true) : setEmailOpen(true)));
       const clean = new URL(window.location.href);
       clean.searchParams.delete("returned");
       clean.searchParams.delete("code");
@@ -183,7 +187,7 @@ async function startCheckout(email: string, recover: boolean, setErr: (s: string
     const res = await fetch("/api/report/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, recover, utm: readUtm(), tz, code: recover ? sessionStorage.getItem(SS_CODE) || "" : "", fbp: readCookie("_fbp"), fbc: readCookie("_fbc") }),
+      body: JSON.stringify({ email, recover, utm: readUtm(), tz, code: sessionStorage.getItem(SS_CODE) || "", fbp: readCookie("_fbp"), fbc: readCookie("_fbc") }),
     });
     const data = await res.json();
     if (!res.ok || !data.url) throw new Error(data.error || "Could not start checkout");
@@ -210,7 +214,7 @@ function EmailSheet({ onClose }: { onClose: () => void }) {
         onSubmit={(e) => {
           e.preventDefault();
           if (!EMAIL_RE.test(email.trim())) return setErr("Enter a valid email.");
-          startCheckout(email.trim().toLowerCase(), !!sessionStorage.getItem(SS_CODE), setErr, setBusy);
+          startCheckout(email.trim().toLowerCase(), /^R59-/i.test(sessionStorage.getItem(SS_CODE) || ""), setErr, setBusy);
         }}
       >
         <span className="grab" />
